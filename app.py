@@ -5,7 +5,7 @@ from PIL import Image
 import base64
 import json
 from io import BytesIO
-import mediapipe as mp
+import mediapipe.python.solutions.face_mesh as mp_face_mesh
 
 st.set_page_config(layout="wide", page_title="Face Part Detector")
 
@@ -20,7 +20,6 @@ st.markdown("""
 st.title("✦ Face Feature Detector")
 st.caption("Upload a face image — hover your mouse over any facial feature to identify it instantly")
 
-mp_face_mesh = mp.solutions.face_mesh
 
 FACEMESH_LEFT_EYE      = frozenset([(263,249),(249,390),(390,373),(373,374),(374,380),(380,381),(381,382),(382,362),(263,466),(466,388),(388,387),(387,386),(386,385),(385,384),(384,398),(398,362)])
 FACEMESH_RIGHT_EYE     = frozenset([(33,7),(7,163),(163,144),(144,145),(145,153),(153,154),(154,155),(155,133),(33,246),(246,161),(161,160),(160,159),(159,158),(158,157),(157,173),(173,133)])
