@@ -5,7 +5,9 @@ from PIL import Image
 import base64
 import json
 from io import BytesIO
-import mediapipe.python.solutions.face_mesh as mp_face_mesh
+import urllib.request
+import os
+import mediapipe as mp
 
 st.set_page_config(layout="wide", page_title="Face Part Detector")
 
@@ -20,7 +22,15 @@ st.markdown("""
 st.title("✦ Face Feature Detector")
 st.caption("Upload a face image — hover your mouse over any facial feature to identify it instantly")
 
+# Download model on first run
+MODEL_PATH = "face_landmarker.task"
+if not os.path.exists(MODEL_PATH):
+    urllib.request.urlretrieve(
+        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+        MODEL_PATH
+    )
 
+# Hardcoded connection sets — no mp.solutions needed
 FACEMESH_LEFT_EYE      = frozenset([(263,249),(249,390),(390,373),(373,374),(374,380),(380,381),(381,382),(382,362),(263,466),(466,388),(388,387),(387,386),(386,385),(385,384),(384,398),(398,362)])
 FACEMESH_RIGHT_EYE     = frozenset([(33,7),(7,163),(163,144),(144,145),(145,153),(153,154),(154,155),(155,133),(33,246),(246,161),(161,160),(160,159),(159,158),(158,157),(157,173),(173,133)])
 FACEMESH_LEFT_EYEBROW  = frozenset([(276,283),(283,282),(282,295),(295,285),(300,293),(293,334),(334,296),(296,336)])
@@ -76,21 +86,27 @@ if uploaded_file:
     img_rgb = np.array(image)
     h, w    = img_rgb.shape[:2]
 
-    with mp_face_mesh.FaceMesh(
-        static_image_mode=True,
-        max_num_faces=1,
-        refine_landmarks=True,
-        min_detection_confidence=0.3,
-    ) as face_mesh:
-        results = face_mesh.process(img_rgb)
+    # New Tasks API — works on all mediapipe versions
+    options = mp.tasks.vision.FaceLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=MODEL_PATH),
+        running_mode=mp.tasks.vision.RunningMode.IMAGE,
+        num_faces=1,
+        min_face_detection_confidence=0.3,
+        output_face_blendshapes=False,
+        output_facial_transformation_matrixes=False,
+    )
 
-    if not results.multi_face_landmarks:
+    with mp.tasks.vision.FaceLandmarker.create_from_options(options) as landmarker:
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_rgb)
+        detection_result = landmarker.detect(mp_image)
+
+    if not detection_result.face_landmarks:
         st.error("❌ No face detected. Please try a clear front-facing photo.")
         st.stop()
 
     raw_landmarks = []
-    for face_lm in results.multi_face_landmarks:
-        for idx, lm in enumerate(face_lm.landmark):
+    for face_lm in detection_result.face_landmarks:
+        for idx, lm in enumerate(face_lm):
             px = int(lm.x * w)
             py = int(lm.y * h)
             raw_landmarks.append((idx, px, py))
@@ -146,14 +162,11 @@ if uploaded_file:
 
     html_code = f"""
     <div style="font-family: Georgia, serif; background: #0a0a0f; padding: 10px; border-radius: 16px;">
-
       <div style="position: relative; display: inline-block; cursor: crosshair;" id="container">
-
         <img id="faceImg"
              src="data:image/png;base64,{img_b64}"
              style="max-width: 100%; border-radius: 12px; display: block;"
              draggable="false"/>
-
         <div id="tooltip" style="
           position: absolute;
           display: none;
@@ -171,9 +184,7 @@ if uploaded_file:
           transform: translate(-50%, -160%);
           z-index: 999;
         "></div>
-
       </div>
-
       <div id="statusBar" style="
         margin-top: 12px;
         padding: 10px 20px;
@@ -185,18 +196,15 @@ if uploaded_file:
         text-align: center;
         border: 1px solid rgba(255,255,255,0.07);
       ">🖱️ Hover over the face to identify features</div>
-
     </div>
 
     <script>
       const landmarks = {landmarks_json};
       const emojiMap  = {emoji_json};
-
       const img       = document.getElementById('faceImg');
       const tooltip   = document.getElementById('tooltip');
       const container = document.getElementById('container');
       const statusBar = document.getElementById('statusBar');
-
       const natW = {w};
       const natH = {h};
       const THRESHOLD = Math.min(natW, natH) * 0.045;
@@ -220,12 +228,9 @@ if uploaded_file:
         const rect  = img.getBoundingClientRect();
         const dispX = e.clientX - rect.left;
         const dispY = e.clientY - rect.top;
-
         const origX = dispX * (natW / rect.width);
         const origY = dispY * (natH / rect.height);
-
         const label = findNearestLabel(origX, origY);
-
         if (label) {{
           const display = emojiMap[label] || label;
           tooltip.textContent   = display;
